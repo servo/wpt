@@ -1,17 +1,17 @@
  # -*- coding: utf-8 -*-
-import sys
-import os
-import logging
+import argparse
 import json
-import socket
+import logging
+import os
 import signal
+import socket
+import sys
 import threading
-from multiprocessing import Process, Event
-from collections import defaultdict
+import time
 import urllib2
 import uuid
-import argparse
-import time
+from collections import defaultdict
+from multiprocessing import Process, Event
 
 repo_root = os.path.abspath(os.path.split(__file__)[0])
 
@@ -75,7 +75,7 @@ class ServerProc(object):
         try:
             self.daemon = init_func(config, paths, port, bind_hostname)
         except socket.error:
-            logger.error("Socket error on port %s" % port)
+            print >> sys.stderr, "Socket error on port %s" % port
             raise
 
         if self.daemon:
@@ -93,6 +93,9 @@ class ServerProc(object):
         self.stop.set()
         self.proc.terminate()
         self.proc.join()
+
+    def is_alive(self):
+        return self.proc.is_alive()
 
 def check_subdomains(config, paths, subdomains, bind_hostname):
     port = get_port()
@@ -144,8 +147,6 @@ def start_servers(config, paths, ports, bind_hostname):
 
             server_proc = ServerProc()
             server_proc.start(init_func, config, paths, port, bind_hostname)
-
-            logger.info("Started server at %s://%s:%s" % (scheme, config["host"], port))
             servers[scheme].append((port, server_proc))
 
     return servers
@@ -184,7 +185,6 @@ class WebSocketDaemon(object):
         self.server_thread = None
 
     def start(self, block=False):
-        logger.info("Starting websockets server on %s:%s" % (self.host, self.port))
         self.started = True
         if block:
             self.server.serve_forever()
@@ -205,7 +205,6 @@ class WebSocketDaemon(object):
                 self.server.server_close()
                 self.server_thread.join()
                 self.server_thread = None
-                logger.info("Stopped websockets server on %s:%s" % (self.host, self.port))
             except AttributeError:
                 pass
             self.started = False

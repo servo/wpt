@@ -105,6 +105,12 @@ class ManualTest(ManifestItem):
     def from_json(cls, obj):
         return cls(obj["path"], obj["url"])
 
+class Stub(ManifestItem):
+    item_type = "stub"
+
+    @classmethod
+    def from_json(cls, obj):
+        return cls(obj["path"], obj["url"])
 
 class Helper(ManifestItem):
     item_type = "helper"
@@ -121,7 +127,7 @@ class ManifestError(Exception):
 class Manifest(object):
     def __init__(self, git_rev):
         self.item_types = ["testharness", "reftest",
-                           "manual", "helper"]
+                           "manual", "helper", "stub"]
         self._data = dict((item_type, defaultdict(set)) for item_type in self.item_types)
         self.rev = git_rev
         self.local_changes = LocalChanges()
@@ -177,7 +183,8 @@ class Manifest(object):
         item_classes = {"testharness":TestharnessTest,
                         "reftest":RefTest,
                         "manual":ManualTest,
-                        "helper":Helper}
+                        "helper":Helper,
+                        "stub": Stub}
 
         for k, values in obj["items"].iteritems():
             if k not in self.item_types:
@@ -231,6 +238,20 @@ def markup_type(ext):
     return None
 
 
+def get_timeout_meta(root):
+    return root.findall(".//{http://www.w3.org/1999/xhtml}meta[@name='timeout']")
+
+
+def get_testharness_scripts(root):
+    return root.findall(".//{http://www.w3.org/1999/xhtml}script[@src='/resources/testharness.js']")
+
+
+def get_reference_links(root):
+    match_links = root.findall(".//{http://www.w3.org/1999/xhtml}link[@rel='match']")
+    mismatch_links = root.findall(".//{http://www.w3.org/1999/xhtml}link[@rel='mismatch']")
+    return match_links, mismatch_links
+
+
 def get_manifest_items(rel_path):
     if rel_path.endswith(os.path.sep):
         return []
@@ -255,6 +276,9 @@ def get_manifest_items(rel_path):
                 return []
         elif url.startswith(item):
             return []
+
+    if name.startswith("stub-"):
+        return [Stub(rel_path, url)]
 
     if name.lower().endswith("-manual"):
         return [ManualTest(rel_path, url)]
@@ -294,7 +318,7 @@ def get_manifest_items(rel_path):
         else:
             root = tree
 
-        timeout_nodes = root.findall(".//{http://www.w3.org/1999/xhtml}meta[@name='timeout']")
+        timeout_nodes = get_timeout_meta(root)
         if timeout_nodes:
             timeout_str = timeout_nodes[0].attrib.get("content", None)
             if timeout_str and timeout_str.lower() == "long":
@@ -303,15 +327,16 @@ def get_manifest_items(rel_path):
                 except:
                     pass
 
-        if root.findall(".//{http://www.w3.org/1999/xhtml}script[@src='/resources/testharness.js']"):
+        if get_testharness_scripts(root):
             return [TestharnessTest(rel_path, url, timeout=timeout)]
         else:
-            match_links = root.findall(".//{http://www.w3.org/1999/xhtml}link[rel='match']")
-            mismatch_links = root.findall(".//{http://www.w3.org/1999/xhtml}link[rel='mismatch']")
+            match_links, mismatch_links = get_reference_links(root)
             for item in match_links + mismatch_links:
-                ref_url = item.attrib["href"]
+                ref_url = urlparse.urljoin(url, item.attrib["href"])
                 ref_type = "==" if item.attrib["rel"] == "match" else "!="
-                ref_list.append(RefTest(rel_path, url, ref_url, ref_type, timeout=timeout))
+                reftest = RefTest(rel_path, url, ref_url, ref_type, timeout=timeout)
+                if reftest not in ref_list:
+                    ref_list.append(reftest)
             return ref_list
 
     return [Helper(rel_path, url)]
