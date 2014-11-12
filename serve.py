@@ -156,9 +156,13 @@ def start_servers(host, ports, paths, bind_hostname, external_config):
 
     return servers
 
+class WPTWebTestServer(wptserve.WebTestServer):
+    request_queue_size = 2000
+
 def start_http_server(host, port, paths, bind_hostname, external_config):
     return wptserve.WebTestHttpd(host=host,
                                  port=port,
+                                 server_cls=WPTWebTestServer,
                                  doc_root=paths["doc_root"],
                                  routes=routes,
                                  rewrites=rewrites,
